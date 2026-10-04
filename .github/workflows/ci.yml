@@ -1,0 +1,73 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Trigger Coolify production deployment
+        run: |
+          set -euo pipefail
+          if [ -z "${{ secrets.COOLIFY_WEBHOOK_PRODUCTION }}" ] || [ -z "${{ secrets.COOLIFY_TOKEN }}" ]; then
+            echo "Missing COOLIFY_WEBHOOK_PRODUCTION or COOLIFY_TOKEN"
+            exit 1
+          fi
+          # Coolify v4: GET /deploy returns 405 (POST required).
+          curl --fail --show-error --request POST \
+            --url "${{ secrets.COOLIFY_WEBHOOK_PRODUCTION }}" \
+            --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
