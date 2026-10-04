@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fraunces", ui-serif, Georgia, serif;
+  --color-ink: #14241c;
+  --color-forest: #0c3a31;
+  --color-canopy: #145c4c;
+  --color-leaf: #1c7d66;
+  --color-gold: #a67c2d;
+  --color-gold2: #eddcb4;
+  --color-cream: #f3eee4;
+  --color-paper: #fffdf9;
+  --color-line: #e5dccb;
+  --color-muted: #5c6a62;
+  --color-danger: #8f2d2d;
+  --color-ok: #1c7a49;
+  --color-warn: #8a5a12;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.forest-panel {
+  background-color: #0c3a31;
+  background-image:
+    radial-gradient(circle at 12% 16%, rgba(237, 220, 180, 0.18), transparent 26%),
+    radial-gradient(circle at 92% 84%, rgba(28, 125, 102, 0.5), transparent 34%),
+    linear-gradient(30deg, rgba(255, 255, 255, 0.04) 12%, transparent 12.5%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.04) 12%, transparent 12.5%);
+  background-size: auto, auto, 22px 22px, 22px 22px;
+}
