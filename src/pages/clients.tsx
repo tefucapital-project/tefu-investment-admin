@@ -2,19 +2,24 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Banner, Button, Denied, Empty, Field, PageTitle, Panel, Pill, Select, Area } from "../components/ui";
 import { useAdmin } from "../context/AdminState";
+import { api } from "../lib/api";
 import { setClientStatus } from "../lib/engine";
 import { dateTime, maskAccount, naira, shortDate } from "../lib/format";
 import { seesFullBank } from "../lib/permissions";
 import { clientMoney, clientName, findClient, holdingsOf, investedOf, kycChecklist, kycOf, walletOf } from "../lib/selectors";
 
 export function ClientsPage() {
-  const { state, admin, allowed } = useAdmin();
+  const { state, admin, allowed, liveMode, refreshClients } = useAdmin();
   const [query, setQuery] = useState("");
   const [kycStatus, setKycStatus] = useState("");
   const [accountStatus, setAccountStatus] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [invested, setInvested] = useState("");
+  const [importJson, setImportJson] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
+  const [importMessage, setImportMessage] = useState("");
+  const [importError, setImportError] = useState("");
   const rows = useMemo(() => {
     if (!state || !admin) return [];
     const needle = query.trim().toLowerCase();
@@ -37,8 +42,58 @@ export function ClientsPage() {
   if (!allowed("clients.view")) return <Denied />;
   return (
     <div>
-      <PageTitle title="Clients" lede="Search by name, email, phone, or client ID. NIN and BVN references are searchable for compliance roles." />
-      <div className="mb-4 grid gap-3 md:grid-cols-3">
+      <PageTitle title="Clients" lede={liveMode ? "Live registered clients from the API. Search by name, email, phone, or client ID." : "Demo clients only. Sign in against the API to load registered users."} />
+      {liveMode && allowed("admins.manage") ? (
+        <Panel>
+          <h2 className="font-medium">Recover demo browser signups</h2>
+          <p className="mt-2 text-sm text-muted">
+            Demo accounts lived in each browser under <code className="text-xs">tefu.investment.user.v1</code>. Paste that JSON (or a users array) here to create real API clients. Temporary password for imported accounts: <code className="text-xs">DemoRecover123!</code>
+          </p>
+          <p className="mt-2 text-xs text-muted">
+            On a browser that still has the signup, open tefuinvestment.com, DevTools → Console, run:{" "}
+            <code className="break-all">copy(localStorage.getItem(&quot;tefu.investment.user.v1&quot;))</code> then paste below.
+          </p>
+          {importError ? <div className="mt-3"><Banner tone="danger">{importError}</Banner></div> : null}
+          {importMessage ? <div className="mt-3"><Banner>{importMessage}</Banner></div> : null}
+          <form
+            className="mt-4 space-y-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setImportBusy(true);
+              setImportError("");
+              setImportMessage("");
+              try {
+                const parsed = JSON.parse(importJson) as { users?: unknown[] } | unknown[];
+                const users = Array.isArray(parsed) ? parsed : parsed.users;
+                if (!Array.isArray(users) || users.length === 0) throw new Error("JSON must include a non-empty users array.");
+                const result = await api<{
+                  created: number;
+                  skipped: number;
+                  temporaryPassword: string;
+                  skippedItems: { email: string; reason: string }[];
+                }>("/clients/import-demo", {
+                  method: "POST",
+                  body: JSON.stringify({ users }),
+                });
+                await refreshClients();
+                const skipNote = result.data.skipped
+                  ? ` Skipped ${result.data.skipped}: ${result.data.skippedItems.map((item) => `${item.email} (${item.reason})`).join("; ")}`
+                  : "";
+                setImportMessage(`Imported ${result.data.created} client(s). Temporary password: ${result.data.temporaryPassword}.${skipNote}`);
+                setImportJson("");
+              } catch (err) {
+                setImportError(err instanceof Error ? err.message : "Import failed.");
+              } finally {
+                setImportBusy(false);
+              }
+            }}
+          >
+            <Area label="Demo localStorage JSON" value={importJson} onChange={(event) => setImportJson(event.target.value)} />
+            <Button type="submit" disabled={importBusy || !importJson.trim()}>{importBusy ? "Importing…" : "Import demo users"}</Button>
+          </form>
+        </Panel>
+      ) : null}
+      <div className="mb-4 mt-4 grid gap-3 md:grid-cols-3">
         <Field label="Search" value={query} onChange={(event) => setQuery(event.target.value)} />
         <Select label="KYC status" value={kycStatus} onChange={(event) => setKycStatus(event.target.value)}>
           <option value="">Any</option>
@@ -83,9 +138,10 @@ export function ClientsPage() {
 
 export function ClientProfilePage() {
   const { clientId = "" } = useParams();
-  const { state, admin, allowed, commit } = useAdmin();
+  const { state, admin, allowed, commit, liveMode, refreshClients } = useAdmin();
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   if (!state || !admin) return null;
   if (!allowed("clients.view")) return <Denied />;
   const client = findClient(state, clientId);
@@ -118,9 +174,37 @@ export function ClientProfilePage() {
           <p className="text-sm">Activated {dateTime(client.activatedAt)}</p>
           <p className="text-sm">KYC completion {check.percent}%</p>
           {allowed("clients.manage") ? (
-            <form className="mt-4 space-y-3" onSubmit={(event) => { event.preventDefault(); const next = client.accountStatus === "suspended" ? "active" : "suspended"; const result = commit((draft, actor) => setClientStatus(draft, actor, client.id, next, reason)); setError(result.ok ? "" : result.error); if (result.ok) setReason(""); }}>
+            <form
+              className="mt-4 space-y-3"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const next = client.accountStatus === "suspended" ? "active" : "suspended";
+                if (liveMode) {
+                  setBusy(true);
+                  try {
+                    await api(`/clients/${client.id}/status`, {
+                      method: "PATCH",
+                      body: JSON.stringify({ status: next === "active" ? "ACTIVE" : "SUSPENDED", reason }),
+                    });
+                    await refreshClients();
+                    setReason("");
+                    setError("");
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Could not update status.");
+                  } finally {
+                    setBusy(false);
+                  }
+                  return;
+                }
+                const result = commit((draft, actor) => setClientStatus(draft, actor, client.id, next, reason));
+                setError(result.ok ? "" : result.error);
+                if (result.ok) setReason("");
+              }}
+            >
               <Area label="Reason" value={reason} onChange={(event) => setReason(event.target.value)} />
-              <Button type="submit" tone={client.accountStatus === "suspended" ? "primary" : "danger"}>{client.accountStatus === "suspended" ? "Reactivate account" : "Suspend account"}</Button>
+              <Button type="submit" tone={client.accountStatus === "suspended" ? "primary" : "danger"} disabled={busy}>
+                {client.accountStatus === "suspended" ? "Reactivate account" : "Suspend account"}
+              </Button>
             </form>
           ) : null}
         </Panel>

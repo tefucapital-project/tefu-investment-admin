@@ -80,7 +80,7 @@ function Shell({ children }: { children: ReactNode }) {
           <p className="text-sm">{admin.name}</p>
         </header>
         <main className="px-4 py-6 lg:px-8">{children}</main>
-        <p className="px-4 pb-8 text-xs text-muted lg:px-8">Staff only. Records stay in this browser. Profit and rental follow actual performance.</p>
+        <p className="px-4 pb-8 text-xs text-muted lg:px-8">Staff only. Live clients load from the API. Profit and rental follow actual performance.</p>
       </div>
       {open ? (
         <div className="fixed inset-0 z-20 bg-forest/40 lg:hidden" onClick={() => setOpen(false)}>

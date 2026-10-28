@@ -43,7 +43,7 @@ export function LoginPage() {
           }}
         >
           <h1 className="font-serif text-4xl text-forest">Admin sign in</h1>
-          <p className="mt-2 text-sm text-muted">Use your staff email. Client accounts cannot open this console.</p>
+          <p className="mt-2 text-sm text-muted">Use your staff email. Registered clients load from the live API after sign-in.</p>
           {error ? <div className="mt-4"><Banner tone="danger">{error}</Banner></div> : null}
           {needsCode ? (
             <div className="mt-6 space-y-4">
@@ -59,12 +59,11 @@ export function LoginPage() {
             </div>
           )}
           <div className="mt-8 rounded-[1.5rem] border border-line bg-paper p-4 text-sm">
-            <p className="font-medium">Demonstration accounts</p>
-            <p className="mt-1 text-muted">Shared password: {STAFF_PASSWORD}</p>
+            <p className="font-medium">Staff accounts</p>
+            <p className="mt-1 text-muted">Password: {STAFF_PASSWORD}</p>
             <ul className="mt-3 space-y-1 text-xs">
               {STAFF_ACCOUNTS.map((account) => <li key={account.email}>{account.email} · {ROLE_LABEL[account.role]}</li>)}
             </ul>
-            {state?.settings.require2fa ? <p className="mt-2 text-xs">Platform policy currently requires a second factor. {ROLE_LABEL.super_admin} can change that in settings.</p> : null}
           </div>
         </form>
       </section>
