@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Banner, Button, Denied, Empty, Field, PageTitle, Panel, Pill, Select, Area } from "../components/ui";
 import { useAdmin } from "../context/AdminState";
-import { api } from "../lib/api";
+import { api, hasToken } from "../lib/api";
 import { setClientStatus } from "../lib/engine";
 import { dateTime, maskAccount, naira, shortDate } from "../lib/format";
 import { seesFullBank } from "../lib/permissions";
@@ -148,6 +148,13 @@ export function ClientProfilePage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const apiReady = liveMode || hasToken();
+  const canDelete = allowed("admins.manage") || allowed("clients.manage");
+
+  useEffect(() => {
+    if (hasToken()) void refreshClients();
+  }, [clientId, refreshClients]);
+
   if (!state || !admin) return null;
   if (!allowed("clients.view")) return <Denied />;
   const client = findClient(state, clientId);
@@ -165,6 +172,7 @@ export function ClientProfilePage() {
     <div className="space-y-4">
       <PageTitle title={clientName(client)} lede={`${clientCode(client)} · registered ${shortDate(client.registeredAt)}`} action={<Link className="text-sm text-canopy" to={`/kyc/${client.id}`}>Open KYC review</Link>} />
       {error ? <Banner tone="danger">{error}</Banner> : null}
+      {!apiReady ? <Banner tone="danger">Sign out and sign in again so live client actions (delete, suspend) can reach the API.</Banner> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel>
           <h2 className="font-medium">Personal information</h2>
@@ -180,18 +188,22 @@ export function ClientProfilePage() {
           <p className="mt-3 text-sm">Last login {dateTime(client.lastLogin)}</p>
           <p className="text-sm">Activated {dateTime(client.activatedAt)}</p>
           <p className="text-sm">KYC completion {check.percent}%</p>
+          <Area label="Reason" value={reason} onChange={(event) => setReason(event.target.value)} />
           {allowed("clients.manage") ? (
             <form
               className="mt-4 space-y-3"
               onSubmit={async (event) => {
                 event.preventDefault();
                 const next = client.accountStatus === "suspended" ? "active" : "suspended";
-                if (liveMode) {
+                if (apiReady) {
                   setBusy(true);
                   try {
                     await api(`/clients/${client.id}/status`, {
                       method: "PATCH",
-                      body: JSON.stringify({ status: next === "active" ? "ACTIVE" : "SUSPENDED", reason }),
+                      body: JSON.stringify({
+                        status: next === "active" ? "ACTIVE" : "SUSPENDED",
+                        reason: reason.trim() || (next === "suspended" ? "Suspended by admin." : "Reactivated by admin."),
+                      }),
                     });
                     await refreshClients();
                     setReason("");
@@ -208,21 +220,24 @@ export function ClientProfilePage() {
                 if (result.ok) setReason("");
               }}
             >
-              <Area label="Reason" value={reason} onChange={(event) => setReason(event.target.value)} />
               <Button type="submit" tone={client.accountStatus === "suspended" ? "primary" : "danger"} disabled={busy}>
                 {client.accountStatus === "suspended" ? "Reactivate account" : "Suspend account"}
               </Button>
             </form>
           ) : null}
-          {liveMode && allowed("admins.manage") ? (
+          {canDelete ? (
             <div className="mt-6 space-y-3 border-t border-line pt-4">
-              <p className="text-sm text-muted">Permanently delete this client, wallet, KYC, and related records. This cannot be undone.</p>
+              <p className="text-sm text-muted">Delete works even if KYC was never started. This permanently removes the account and related records.</p>
               <Button
                 type="button"
                 tone="danger"
-                disabled={deleteBusy || reason.trim().length < 3}
+                disabled={deleteBusy || !apiReady}
                 onClick={async () => {
-                  if (!window.confirm(`Delete ${clientName(client)} (${clientCode(client)}) permanently?`)) return;
+                  if (!apiReady) {
+                    setError("Sign out and sign in again to delete live clients.");
+                    return;
+                  }
+                  if (!window.confirm(`Delete ${clientName(client)} (${clientCode(client)}) permanently? KYC is not required.`)) return;
                   setDeleteBusy(true);
                   setError("");
                   try {

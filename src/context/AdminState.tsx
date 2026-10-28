@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { applyPassword, createAdminUser, loginAdmin, logoutAdmin, verifyAdminCode } from "../lib/engine";
 import { digest, passwordIssue, uid } from "../lib/format";
 import { api, clearTokens, hasToken, readProfile, saveProfile, saveTokens, type AdminApiProfile } from "../lib/api";
@@ -66,16 +66,21 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     return applyLiveClients(base, result.data);
   }
 
-  async function refreshClients() {
-    if (!state || !hasToken()) return;
+  const refreshClients = useCallback(async () => {
+    if (!hasToken()) return;
     try {
-      const next = await pullClients(state);
-      save(next, sessionId || LIVE_SESSION);
+      const base = loadState() ?? (await createSeed());
+      const next = await pullClients(base);
+      const nextSession = readSessionId() || LIVE_SESSION;
+      persist(next);
+      setState(next);
+      setSessionId(nextSession);
+      writeSessionId(nextSession);
       setLiveMode(true);
     } catch {
       /* keep current view if refresh fails */
     }
-  }
+  }, []);
 
   useEffect(() => {
     let cancel = false;
