@@ -2,6 +2,7 @@ import type { AccountStatus, AdminUser, AppState, Client, KycRecord, KycStatus, 
 
 export type LiveClient = {
   id: string;
+  memberCode?: string | null;
   firstName: string;
   middleName?: string;
   lastName: string;
@@ -124,6 +125,7 @@ export function mapLiveClient(row: LiveClient): { client: Client; kyc: KycRecord
   const lastActivity = Date.parse(row.updatedAt ?? row.createdAt) || registeredAt;
   const client: Client = {
     id: row.id,
+    memberCode: row.memberCode ?? null,
     firstName: row.firstName,
     middleName: row.middleName ?? "",
     lastName: row.lastName,

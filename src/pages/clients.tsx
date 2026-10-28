@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Banner, Button, Denied, Empty, Field, PageTitle, Panel, Pill, Select, Area } from "../components/ui";
 import { useAdmin } from "../context/AdminState";
 import { api } from "../lib/api";
@@ -7,6 +7,10 @@ import { setClientStatus } from "../lib/engine";
 import { dateTime, maskAccount, naira, shortDate } from "../lib/format";
 import { seesFullBank } from "../lib/permissions";
 import { clientMoney, clientName, findClient, holdingsOf, investedOf, kycChecklist, kycOf, walletOf } from "../lib/selectors";
+
+function clientCode(client: { memberCode?: string | null; id: string }) {
+  return client.memberCode || client.id;
+}
 
 export function ClientsPage() {
   const { state, admin, allowed, liveMode, refreshClients } = useAdmin();
@@ -33,7 +37,7 @@ export function ClientsPage() {
       if (invested === "yes" && amount <= 0) return false;
       if (invested === "no" && amount > 0) return false;
       if (!needle) return true;
-      const blob = [client.id, clientName(client), client.email, client.phone, kyc?.nin.reference, kyc?.bvn.reference].join(" ").toLowerCase();
+      const blob = [client.id, client.memberCode, clientName(client), client.email, client.phone, kyc?.nin.reference, kyc?.bvn.reference].join(" ").toLowerCase();
       const identity = allowed("kyc.review") ? blob : blob.replace(kyc?.nin.reference ?? "___", "").replace(kyc?.bvn.reference ?? "___", "");
       return identity.includes(needle);
     });
@@ -119,7 +123,7 @@ export function ClientsPage() {
               const kyc = kycOf(state, client.id);
               return (
                 <tr key={client.id} className="border-t border-line">
-                  <td className="px-4 py-3"><Link className="text-canopy" to={`/clients/${client.id}`}>{clientName(client)}</Link><p className="text-xs text-muted">{client.id}</p></td>
+                  <td className="px-4 py-3"><Link className="text-canopy" to={`/clients/${client.id}`}>{clientName(client)}</Link><p className="text-xs text-muted">{clientCode(client)}</p></td>
                   <td>{client.email}<p className="text-xs text-muted">{client.phone}</p></td>
                   <td><Pill status={kyc?.status ?? "not_started"} /></td>
                   <td><Pill status={client.accountStatus} /></td>
@@ -138,10 +142,12 @@ export function ClientsPage() {
 
 export function ClientProfilePage() {
   const { clientId = "" } = useParams();
+  const navigate = useNavigate();
   const { state, admin, allowed, commit, liveMode, refreshClients } = useAdmin();
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   if (!state || !admin) return null;
   if (!allowed("clients.view")) return <Denied />;
   const client = findClient(state, clientId);
@@ -157,7 +163,7 @@ export function ClientProfilePage() {
   const sessions = state.transactions.filter((item) => item.clientId === client.id).slice(0, 6);
   return (
     <div className="space-y-4">
-      <PageTitle title={clientName(client)} lede={`${client.id} · registered ${shortDate(client.registeredAt)}`} action={<Link className="text-sm text-canopy" to={`/kyc/${client.id}`}>Open KYC review</Link>} />
+      <PageTitle title={clientName(client)} lede={`${clientCode(client)} · registered ${shortDate(client.registeredAt)}`} action={<Link className="text-sm text-canopy" to={`/kyc/${client.id}`}>Open KYC review</Link>} />
       {error ? <Banner tone="danger">{error}</Banner> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel>
@@ -166,6 +172,7 @@ export function ClientProfilePage() {
           <p className="text-sm text-muted">{kyc.personal.dob || "Date of birth not submitted"} · {kyc.personal.gender || "Gender not submitted"} · {kyc.personal.nationality || "Nationality not submitted"}</p>
           <p className="mt-2 text-sm">{kyc.personal.address || "Address not submitted"}{kyc.personal.state ? `, ${kyc.personal.state}` : ""} {kyc.personal.lga}</p>
           <p className="text-sm">{client.phone} · {client.email}</p>
+          <p className="mt-2 text-sm">Member code <span className="font-medium">{clientCode(client)}</span></p>
         </Panel>
         <Panel>
           <h2 className="font-medium">Account</h2>
@@ -206,6 +213,35 @@ export function ClientProfilePage() {
                 {client.accountStatus === "suspended" ? "Reactivate account" : "Suspend account"}
               </Button>
             </form>
+          ) : null}
+          {liveMode && allowed("admins.manage") ? (
+            <div className="mt-6 space-y-3 border-t border-line pt-4">
+              <p className="text-sm text-muted">Permanently delete this client, wallet, KYC, and related records. This cannot be undone.</p>
+              <Button
+                type="button"
+                tone="danger"
+                disabled={deleteBusy || reason.trim().length < 3}
+                onClick={async () => {
+                  if (!window.confirm(`Delete ${clientName(client)} (${clientCode(client)}) permanently?`)) return;
+                  setDeleteBusy(true);
+                  setError("");
+                  try {
+                    await api(`/clients/${client.id}`, {
+                      method: "DELETE",
+                      body: JSON.stringify({ reason: reason.trim() || "Deleted by admin." }),
+                    });
+                    await refreshClients();
+                    navigate("/clients");
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Could not delete account.");
+                  } finally {
+                    setDeleteBusy(false);
+                  }
+                }}
+              >
+                {deleteBusy ? "Deleting…" : "Delete account permanently"}
+              </Button>
+            </div>
           ) : null}
         </Panel>
         <Panel>

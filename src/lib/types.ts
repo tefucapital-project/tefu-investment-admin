@@ -114,6 +114,7 @@ export type AdminSession = {
 
 export type Client = {
   id: string;
+  memberCode?: string | null;
   firstName: string;
   middleName: string;
   lastName: string;
