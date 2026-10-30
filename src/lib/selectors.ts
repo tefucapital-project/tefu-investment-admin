@@ -55,8 +55,8 @@ export function kycChecklist(kyc: KycRecord) {
     { key: "nin", label: "NIN", ok: kyc.nin.status === "verified" },
     { key: "bvn", label: "BVN", ok: kyc.bvn.status === "verified" },
     { key: "bank", label: "Bank account", ok: kyc.bank.status === "verified" },
-    { key: "document", label: "Documents", ok: kyc.document.status === "approved" },
-    { key: "identity", label: "Identity verification", ok: kyc.selfie.status === "approved" },
+    { key: "document", label: "Documents", ok: kyc.document.status === "approved" || kyc.document.status === "pending" },
+    { key: "identity", label: "Identity verification", ok: kyc.selfie.status === "approved" || kyc.selfie.status === "pending" },
   ];
   const ready = items.every((item) => item.ok);
   const withFinal = [...items, { key: "final", label: "Final review", ok: kyc.status === "approved" }];

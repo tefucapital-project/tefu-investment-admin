@@ -150,6 +150,8 @@ export type VerifyPart = {
 
 export type KycRecord = {
   clientId: string;
+  /** Backend KYC record id — required for live approve/reject API calls. */
+  recordId?: string;
   status: KycStatus;
   personal: Personal;
   nin: VerifyPart;

@@ -54,11 +54,12 @@ export function KycQueuePage() {
 
 export function KycReviewPage() {
   const { clientId = "" } = useParams();
-  const { state, admin, allowed, commit } = useAdmin();
+  const { state, admin, allowed, commit, liveMode, decideKycLive, refreshClients } = useAdmin();
   const [reason, setReason] = useState("");
   const [docNote, setDocNote] = useState("");
   const [selfieNote, setSelfieNote] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   if (!state || !admin) return null;
   if (!allowed("kyc.review")) return <Denied />;
   const client = findClient(state, clientId);
@@ -69,10 +70,35 @@ export function KycReviewPage() {
   function run(result: { ok: boolean; error?: string }) {
     setError(result.ok ? "" : result.error ?? "The action did not complete.");
   }
+  async function decide(decision: "approve" | "reject" | "update") {
+    setBusy(true);
+    setError("");
+    if (liveMode) {
+      const result = await decideKycLive({
+        recordId: kyc!.recordId || "",
+        decision,
+        reason,
+      });
+      setBusy(false);
+      run(result);
+      return;
+    }
+    const result = commit((draft, actor) => decideKyc(draft, actor, client!.id, decision, reason));
+    setBusy(false);
+    run(result);
+  }
   return (
     <div className="space-y-4">
-      <PageTitle title={`Review ${clientName(client)}`} lede="Approve is available only when every mandatory component is complete and the Client Onboarding Fee is successful." />
+      <PageTitle title={`Review ${clientName(client)}`} lede="Approve activates the client account. Until then they cannot deposit, withdraw, or invest." />
       {error ? <Banner tone="danger">{error}</Banner> : null}
+      {liveMode ? (
+        <Banner tone="ok">
+          Live mode — decisions go to the API.{" "}
+          <button type="button" className="underline" onClick={() => void refreshClients()}>
+            Refresh clients
+          </button>
+        </Banner>
+      ) : null}
       <Panel>
         <p className="text-sm">KYC completion {check.percent}%</p>
         <ul className="mt-3 grid gap-2 sm:grid-cols-2 text-sm">
@@ -101,8 +127,8 @@ export function KycReviewPage() {
           <p className="text-sm">{kyc.bank.accountName} · {bankNumber}</p>
           <p className="mt-2"><Pill status={kyc.bank.status} /></p>
         </Panel>
-        <EvidenceEditor title="Identification document" type={kyc.document.type || "Not submitted"} status={kyc.document.status} note={docNote} setNote={setDocNote} reviewNote={kyc.document.reviewNote} uploadedAt={kyc.document.uploadedAt} canReview={allowed("documents.review")} onReview={(status) => run(commit((draft, actor) => reviewEvidence(draft, actor, client.id, "document", status, docNote)))} />
-        <EvidenceEditor title="Identity photo" type="Selfie" status={kyc.selfie.status} note={selfieNote} setNote={setSelfieNote} reviewNote={kyc.selfie.reviewNote} uploadedAt={kyc.selfie.uploadedAt} canReview={allowed("documents.review")} onReview={(status) => run(commit((draft, actor) => reviewEvidence(draft, actor, client.id, "selfie", status, selfieNote)))} />
+        <EvidenceEditor title="Identification document" type={kyc.document.type || "Not submitted"} status={kyc.document.status} note={docNote} setNote={setDocNote} reviewNote={kyc.document.reviewNote} uploadedAt={kyc.document.uploadedAt} canReview={!liveMode && allowed("documents.review")} onReview={(status) => run(commit((draft, actor) => reviewEvidence(draft, actor, client.id, "document", status, docNote)))} />
+        <EvidenceEditor title="Identity photo" type="Selfie" status={kyc.selfie.status} note={selfieNote} setNote={setSelfieNote} reviewNote={kyc.selfie.reviewNote} uploadedAt={kyc.selfie.uploadedAt} canReview={!liveMode && allowed("documents.review")} onReview={(status) => run(commit((draft, actor) => reviewEvidence(draft, actor, client.id, "selfie", status, selfieNote)))} />
       </div>
       <Panel>
         <h2 className="font-medium">Decision</h2>
@@ -112,11 +138,12 @@ export function KycReviewPage() {
           <form className="mt-3 space-y-3" onSubmit={(event) => event.preventDefault()}>
             <Area label="Reason or required correction" value={reason} onChange={(event) => setReason(event.target.value)} />
             <div className="flex flex-wrap gap-2">
-              <Button type="button" disabled={!check.ready} onClick={() => run(commit((draft, actor) => decideKyc(draft, actor, client.id, "approve", reason)))}>Approve KYC</Button>
-              <Button type="button" tone="danger" onClick={() => run(commit((draft, actor) => decideKyc(draft, actor, client.id, "reject", reason)))}>Reject</Button>
-              <Button type="button" tone="ghost" onClick={() => run(commit((draft, actor) => decideKyc(draft, actor, client.id, "update", reason)))}>Request update</Button>
+              <Button type="button" disabled={!check.ready || busy} onClick={() => void decide("approve")}>Approve KYC</Button>
+              <Button type="button" tone="danger" disabled={busy} onClick={() => void decide("reject")}>Reject</Button>
+              <Button type="button" tone="ghost" disabled={busy} onClick={() => void decide("update")}>Request update</Button>
             </div>
             {!check.ready ? <p className="text-xs text-muted">Approve stays unavailable until personal information, NIN, BVN, bank, documents, and identity verification are complete.</p> : null}
+            {liveMode && !kyc.recordId ? <p className="text-xs text-danger">Refresh clients so this KYC file has a live record id before deciding.</p> : null}
           </form>
         ) : <p className="mt-2 text-sm text-muted">Your role can review this file. A compliance admin records the decision.</p>}
       </Panel>

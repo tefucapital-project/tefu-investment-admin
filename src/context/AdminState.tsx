@@ -22,6 +22,11 @@ type AdminValue = {
   changePassword: (current: string, next: string) => Promise<ActionResult>;
   createAdmin: (input: { name: string; email: string; role: Role; password: string }) => Promise<ActionResult>;
   refreshClients: () => Promise<void>;
+  decideKycLive: (input: {
+    recordId: string;
+    decision: "approve" | "reject" | "update";
+    reason: string;
+  }) => Promise<ActionResult>;
   resetDemo: () => void;
 };
 
@@ -254,6 +259,33 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     window.location.assign("/login");
   }
 
+  async function decideKycLive(input: {
+    recordId: string;
+    decision: "approve" | "reject" | "update";
+    reason: string;
+  }) {
+    if (!input.recordId) return { ok: false as const, error: "Missing KYC record id. Refresh the client list and try again." };
+    if (input.decision !== "approve" && input.reason.trim().length < 3) {
+      return { ok: false as const, error: "Enter a reason for this decision." };
+    }
+    try {
+      const path =
+        input.decision === "approve"
+          ? `/kyc/${input.recordId}/approve`
+          : input.decision === "reject"
+            ? `/kyc/${input.recordId}/reject`
+            : `/kyc/${input.recordId}/request-update`;
+      await api(path, {
+        method: "POST",
+        body: JSON.stringify(input.decision === "approve" ? {} : { reason: input.reason.trim() }),
+      });
+      await refreshClients();
+      return { ok: true as const };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "KYC decision failed." };
+    }
+  }
+
   const value: AdminValue = {
     ready,
     state,
@@ -268,6 +300,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     changePassword,
     createAdmin,
     refreshClients,
+    decideKycLive,
     resetDemo,
   };
 

@@ -13,6 +13,7 @@ export type LiveClient = {
   updatedAt?: string;
   kycStatus: string;
   kyc: {
+    id?: string;
     status: string;
     personalStatus?: string;
     ninStatus?: string;
@@ -140,6 +141,7 @@ export function mapLiveClient(row: LiveClient): { client: Client; kyc: KycRecord
   const kycSource = row.kyc;
   const kyc: KycRecord = {
     clientId: row.id,
+    recordId: kycSource?.id || undefined,
     status: mapKycStatus(kycSource?.status ?? row.kycStatus),
     personal: {
       fullName: `${row.firstName} ${row.lastName}`.trim(),
