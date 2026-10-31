@@ -139,10 +139,14 @@ export function mapLiveClient(row: LiveClient): { client: Client; kyc: KycRecord
     activatedAt: row.accountStatus === "ACTIVE" ? registeredAt : null,
   };
   const kycSource = row.kyc;
+  const rawKycStatus =
+    row.accountStatus === "KYC_PENDING_REVIEW" || row.kycStatus === "KYC_PENDING_REVIEW"
+      ? "KYC_PENDING_REVIEW"
+      : (kycSource?.status ?? row.kycStatus);
   const kyc: KycRecord = {
     clientId: row.id,
     recordId: kycSource?.id || undefined,
-    status: mapKycStatus(kycSource?.status ?? row.kycStatus),
+    status: mapKycStatus(rawKycStatus),
     personal: {
       fullName: `${row.firstName} ${row.lastName}`.trim(),
       dob: kycSource?.dateOfBirth ?? "",
